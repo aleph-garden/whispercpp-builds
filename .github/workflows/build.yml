@@ -110,7 +110,11 @@ jobs:
         with:
           cuda: ${{ matrix.cuda_version }}
           method: network
-          sub-packages: '["nvcc","cudart","cublas","cublas-dev"]'
+          # CUDA 12.x renamed cuda-cublas-* to libcublas-*; cublas now lives
+          # outside the cuda-* package family, so it needs the
+          # non-cuda-sub-packages parameter.
+          sub-packages: '["nvcc","cudart"]'
+          non-cuda-sub-packages: '["libcublas","libcublas-dev"]'
 
       # macOS Metal needs nothing extra — Xcode CLT is preinstalled on macos-14.
 
@@ -131,6 +135,15 @@ jobs:
           CMAKE_ARGS: "${{ matrix.cmake_args }} -DCMAKE_POLICY_VERSION_MINIMUM=3.5"
         run: |
           set -eux
+          # macos-14 is Apple Silicon only. pywhispercpp's setup.py defaults
+          # to a `macosx_10_13_universal2` wheel tag; repairwheel/delocate
+          # then validates and bails because the build produced no x86_64
+          # binaries. Force arm64-only.
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            export MACOSX_DEPLOYMENT_TARGET=11.0
+            export _PYTHON_HOST_PLATFORM=macosx-11.0-arm64
+            export ARCHFLAGS="-arch arm64"
+          fi
           mkdir -p dist
           # pip wheel --no-binary forces a from-source build of pywhispercpp,
           # respecting CMAKE_ARGS for the embedded whisper.cpp configure.

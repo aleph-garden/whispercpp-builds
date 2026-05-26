@@ -209,9 +209,12 @@ jobs:
             # Manual repair excluding the driver lib.
             unrepaired="$(ls dist/pywhispercpp-*.whl | head -n1)"
             mkdir -p dist-repaired
+            # manylinux_2_34 matches ubuntu-22.04's glibc 2.35 baseline
+            # (the runner we pinned for the cuda-keyring). 2_28 was too
+            # strict and rejected symbols from /usr/lib's modern libstdc++.
             auditwheel repair \
               --exclude libcuda.so.1 \
-              --plat manylinux_2_28_x86_64 \
+              --plat manylinux_2_34_x86_64 \
               "$unrepaired" -w dist-repaired/
             rm -f dist/pywhispercpp-*.whl
             mv dist-repaired/*.whl dist/

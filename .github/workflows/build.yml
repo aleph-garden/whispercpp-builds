@@ -220,12 +220,12 @@ jobs:
             python - <<PY
           import re, pathlib
           p = pathlib.Path("${srcdir}setup.py")
-          code = p.read_text()
+          code = p.read_text(encoding="utf-8")
           new = re.sub(r"self\.repair_wheel\([^)]*\)",
-                       "pass  # repair disabled — runs externally",
+                       "pass  # repair disabled (runs externally)",
                        code)
           assert new != code, "could not locate repair_wheel call in setup.py"
-          p.write_text(new)
+          p.write_text(new, encoding="utf-8")
           PY
             # pywhispercpp's setup.py uses setuptools-scm/vcs_versioning
             # which falls back to 0.0.0 when no git history is present

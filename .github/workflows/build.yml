@@ -265,9 +265,18 @@ jobs:
           assert new != s, "Version: line not patched"
           p.write_text(new, encoding="utf-8")
           PY
-          # `wheel pack` derives the new filename from METADATA's Version.
+          # `wheel pack` reads the new Version from METADATA but strips
+          # the PEP 440 local-version segment from the filename it writes.
+          # pip itself accepts +<segment> in wheel filenames, so we rename
+          # the packed wheel afterwards to include +<backend>.
           rm "$orig"
           python -m wheel pack "$unpacked_dir" -d .
+          packed="$(ls pywhispercpp-*.whl | head -n1)"
+          # Insert +<backend> after the version, before the cp312 tag.
+          renamed="$(echo "$packed" | sed -E "s/^(pywhispercpp-[0-9]+\.[0-9]+\.[0-9]+)(-cp[0-9]+)/\1+${{ matrix.asset_local_version }}\2/")"
+          if [[ "$packed" != "$renamed" ]]; then
+            mv "$packed" "$renamed"
+          fi
           rm -rf _unpacked
           ls -la
 

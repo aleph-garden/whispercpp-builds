@@ -43,21 +43,25 @@ jobs:
       matrix:
         include:
           - target: linux-x86_64-vulkan
+            # ubuntu-latest = 24.04, glibc 2.39 → manylinux_2_39 target.
             runner: ubuntu-latest
             python: '3.12'
             cmake_args: '-DGGML_VULKAN=on'
             asset_local_version: vulkan
             asset_platform: linux_x86_64
+            manylinux_tag: manylinux_2_39_x86_64
           - target: linux-x86_64-cuda12
             # Pin to 22.04 — Jimver/cuda-toolkit@v0.2.16 fetches
             # cuda-keyring_1.0-1_all.deb which only exists for ubuntu2204.
             # 24.04's repo uses keyring_1.1 and the action 404s.
+            # 22.04 = glibc 2.35 → manylinux_2_34 (next-lowest supported).
             runner: ubuntu-22.04
             python: '3.12'
             cmake_args: '-DGGML_CUDA=on'
             cuda_version: '12.4.1'
             asset_local_version: cuda12
             asset_platform: linux_x86_64
+            manylinux_tag: manylinux_2_34_x86_64
           - target: darwin-aarch64-metal
             runner: macos-14
             python: '3.12'
@@ -227,10 +231,9 @@ jobs:
             unrepaired="$(ls "$srcdir"dist/pywhispercpp-*.whl | head -n1)"
             mkdir -p dist
             if [[ "$RUNNER_OS" == "Linux" ]]; then
-              # manylinux_2_34 matches ubuntu-22.04's glibc 2.35 baseline.
               auditwheel repair \
                 --exclude "$exclude_lib" \
-                --plat manylinux_2_34_x86_64 \
+                --plat "${{ matrix.manylinux_tag }}" \
                 "$unrepaired" -w dist/
             elif [[ "$RUNNER_OS" == "Windows" ]]; then
               dllsrc_unix="$srcdir/build/temp.win-amd64-cpython-312/Release/_pywhispercpp/bin/Release"

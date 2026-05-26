@@ -70,6 +70,13 @@ jobs:
             cmake_args: '-DGGML_VULKAN=on'
             asset_local_version: vulkan
             asset_platform: win_amd64
+          - target: windows-x86_64-cuda12
+            runner: windows-latest
+            python: '3.12'
+            cmake_args: '-DGGML_CUDA=on'
+            cuda_version: '12.4.1'
+            asset_local_version: cuda12
+            asset_platform: win_amd64
     steps:
       - name: Resolve pywhispercpp version
         id: ver
@@ -116,22 +123,32 @@ jobs:
           sub-packages: '["nvcc","cudart"]'
           non-cuda-sub-packages: '["libcublas","libcublas-dev"]'
 
+      - name: Install CUDA Toolkit (Windows)
+        if: matrix.asset_local_version == 'cuda12' && runner.os == 'Windows'
+        uses: Jimver/cuda-toolkit@v0.2.16
+        with:
+          cuda: ${{ matrix.cuda_version }}
+          method: network
+          # Windows sub-package names differ from Linux. nvcc + visual_studio_integration
+          # are required so CMake's CUDA detection picks up the toolchain;
+          # cublas / cublas_dev ship as standard sub-packages on the Windows installer.
+          sub-packages: '["nvcc","cudart","cublas","cublas_dev","visual_studio_integration"]'
+
       # macOS Metal needs nothing extra — Xcode CLT is preinstalled on macos-14.
 
-      # Windows: enter an MSVC dev shell + use Ninja generator. MSBuild's
-      # FileTracker hits MAX_PATH (260 chars) on pywhispercpp's deeply
-      # nested try-compile paths and fails with FTK1011. Ninja avoids the
-      # FileTracker layer entirely.
-      - name: Set up MSVC env (Windows)
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
-
-      - name: Install Ninja (Windows)
+      # Windows: pywhispercpp's setup.py hard-codes a `bin/Release/` DLL
+      # output dir which only MSBuild produces; with Ninja the DLLs go to
+      # `bin/` and delvewheel fails to find them. Stay on MSBuild and
+      # instead shorten TMP to give MSBuild's FileTracker enough MAX_PATH
+      # headroom on the deeply nested try-compile paths.
+      - name: Short TMP for MSBuild (Windows)
         if: runner.os == 'Windows'
         shell: bash
-        run: choco install ninja -y --no-progress
+        run: |
+          mkdir -p /c/T
+          echo "TEMP=C:\\T" >> "$GITHUB_ENV"
+          echo "TMP=C:\\T" >> "$GITHUB_ENV"
+          echo "PIP_CACHE_DIR=C:\\pc" >> "$GITHUB_ENV"
 
       - name: Install build deps
         shell: bash
@@ -158,11 +175,6 @@ jobs:
             export MACOSX_DEPLOYMENT_TARGET=11.0
             export _PYTHON_HOST_PLATFORM=macosx-11.0-arm64
             export ARCHFLAGS="-arch arm64"
-          fi
-          # Windows: force Ninja so the deeply-nested CMake try-compile
-          # paths don't trip MSBuild's FileTracker MAX_PATH limit.
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            export CMAKE_GENERATOR=Ninja
           fi
           mkdir -p dist
           # pip wheel --no-binary forces a from-source build of pywhispercpp,

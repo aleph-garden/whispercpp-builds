@@ -178,15 +178,18 @@ jobs:
           fi
           mkdir -p dist
 
-          # Linux + CUDA needs a special path: pywhispercpp's setup.py
-          # invokes repairwheel which calls auditwheel which insists on
-          # bundling libcuda.so.1 — but that lib comes from the NVIDIA
-          # driver (not the CUDA toolkit) and is absent on GH runners.
+          # CUDA on Linux + Windows needs a special path: pywhispercpp's
+          # setup.py invokes repairwheel which insists on bundling
+          # libcuda.so.1 / nvcuda.dll — those come from the NVIDIA driver
+          # (not the CUDA toolkit) and are absent on GH runners.
           # Strategy: extract source, neuter the repair_wheel call, build
-          # with pip wheel, then run auditwheel manually with
-          # --exclude libcuda.so.1 so the driver lib stays system-provided.
-          if [[ "$RUNNER_OS" == "Linux" && "${{ matrix.asset_local_version }}" == "cuda12" ]]; then
-            python -m pip install auditwheel patchelf
+          # with `python setup.py bdist_wheel` (keeps the build/ dir
+          # inside the source tree so we can locate the bundled
+          # libwhisper/ggml DLLs afterwards), then run the platform repair
+          # tool manually with the right --exclude.
+          if [[ "${{ matrix.asset_local_version }}" == "cuda12" ]]; then
+            python -m pip install auditwheel patchelf delvewheel \
+              scikit-build cmake pybind11 setuptools wheel
             mkdir -p src
             pip download "pywhispercpp==${{ steps.ver.outputs.pywhispercpp }}" \
               --no-deps --no-binary :all: -d src/
@@ -196,28 +199,31 @@ jobs:
           import re, pathlib
           p = pathlib.Path("${srcdir}setup.py")
           code = p.read_text()
-          # Neuter the repair_wheel call so auditwheel/repairwheel don't
-          # try to bundle the absent libcuda driver. We run auditwheel
-          # manually below with the correct --exclude.
           new = re.sub(r"self\.repair_wheel\([^)]*\)",
-                       "pass  # repair disabled — auditwheel runs externally",
+                       "pass  # repair disabled — runs externally",
                        code)
           assert new != code, "could not locate repair_wheel call in setup.py"
           p.write_text(new)
           PY
-            pip wheel "$srcdir" --no-deps -w dist/
-            # Manual repair excluding the driver lib.
-            unrepaired="$(ls dist/pywhispercpp-*.whl | head -n1)"
-            mkdir -p dist-repaired
-            # manylinux_2_34 matches ubuntu-22.04's glibc 2.35 baseline
-            # (the runner we pinned for the cuda-keyring). 2_28 was too
-            # strict and rejected symbols from /usr/lib's modern libstdc++.
-            auditwheel repair \
-              --exclude libcuda.so.1 \
-              --plat manylinux_2_34_x86_64 \
-              "$unrepaired" -w dist-repaired/
-            rm -f dist/pywhispercpp-*.whl
-            mv dist-repaired/*.whl dist/
+            ( cd "$srcdir" && python setup.py bdist_wheel )
+            unrepaired="$(ls "$srcdir"dist/pywhispercpp-*.whl | head -n1)"
+            mkdir -p dist
+            if [[ "$RUNNER_OS" == "Linux" ]]; then
+              # manylinux_2_34 matches ubuntu-22.04's glibc 2.35 baseline.
+              auditwheel repair \
+                --exclude libcuda.so.1 \
+                --plat manylinux_2_34_x86_64 \
+                "$unrepaired" -w dist/
+            elif [[ "$RUNNER_OS" == "Windows" ]]; then
+              # MSBuild puts the bundled whisper/ggml DLLs under
+              # build/temp.win-amd64-cpython-312/Release/_pywhispercpp/bin/Release.
+              dllsrc_unix="$srcdir/build/temp.win-amd64-cpython-312/Release/_pywhispercpp/bin/Release"
+              dllsrc="$(cygpath -w "$dllsrc_unix")"
+              python -m delvewheel repair \
+                --exclude nvcuda.dll \
+                --add-path "$dllsrc" \
+                "$unrepaired" --wheel-dir dist
+            fi
           else
             # Standard path: pip wheel --no-binary forces a from-source
             # build of pywhispercpp, respecting CMAKE_ARGS for the embedded

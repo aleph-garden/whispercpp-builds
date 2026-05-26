@@ -177,10 +177,52 @@ jobs:
             export ARCHFLAGS="-arch arm64"
           fi
           mkdir -p dist
-          # pip wheel --no-binary forces a from-source build of pywhispercpp,
-          # respecting CMAKE_ARGS for the embedded whisper.cpp configure.
-          pip wheel "pywhispercpp==${{ steps.ver.outputs.pywhispercpp }}" \
-            --no-deps --no-binary=pywhispercpp -w dist/
+
+          # Linux + CUDA needs a special path: pywhispercpp's setup.py
+          # invokes repairwheel which calls auditwheel which insists on
+          # bundling libcuda.so.1 — but that lib comes from the NVIDIA
+          # driver (not the CUDA toolkit) and is absent on GH runners.
+          # Strategy: extract source, neuter the repair_wheel call, build
+          # with pip wheel, then run auditwheel manually with
+          # --exclude libcuda.so.1 so the driver lib stays system-provided.
+          if [[ "$RUNNER_OS" == "Linux" && "${{ matrix.asset_local_version }}" == "cuda12" ]]; then
+            python -m pip install auditwheel patchelf
+            mkdir -p src
+            pip download "pywhispercpp==${{ steps.ver.outputs.pywhispercpp }}" \
+              --no-deps --no-binary :all: -d src/
+            ( cd src && tar xzf pywhispercpp-*.tar.gz )
+            srcdir="$(ls -d src/pywhispercpp-*/ | head -n1)"
+            python - <<PY
+          import re, pathlib
+          p = pathlib.Path("${srcdir}setup.py")
+          code = p.read_text()
+          # Neuter the repair_wheel call so auditwheel/repairwheel don't
+          # try to bundle the absent libcuda driver. We run auditwheel
+          # manually below with the correct --exclude.
+          new = re.sub(r"self\.repair_wheel\([^)]*\)",
+                       "pass  # repair disabled — auditwheel runs externally",
+                       code)
+          assert new != code, "could not locate repair_wheel call in setup.py"
+          p.write_text(new)
+          PY
+            pip wheel "$srcdir" --no-deps -w dist/
+            # Manual repair excluding the driver lib.
+            unrepaired="$(ls dist/pywhispercpp-*.whl | head -n1)"
+            mkdir -p dist-repaired
+            auditwheel repair \
+              --exclude libcuda.so.1 \
+              --plat manylinux_2_28_x86_64 \
+              "$unrepaired" -w dist-repaired/
+            rm -f dist/pywhispercpp-*.whl
+            mv dist-repaired/*.whl dist/
+          else
+            # Standard path: pip wheel --no-binary forces a from-source
+            # build of pywhispercpp, respecting CMAKE_ARGS for the embedded
+            # whisper.cpp configure. The setup.py's repair step runs and
+            # bundles libwhisper/libggml into the wheel.
+            pip wheel "pywhispercpp==${{ steps.ver.outputs.pywhispercpp }}" \
+              --no-deps --no-binary=pywhispercpp -w dist/
+          fi
 
       # --- Rewrite wheel filename + METADATA to embed +<backend> ---------
       #

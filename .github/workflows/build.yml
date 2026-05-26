@@ -227,7 +227,11 @@ jobs:
           assert new != code, "could not locate repair_wheel call in setup.py"
           p.write_text(new)
           PY
-            ( cd "$srcdir" && python setup.py bdist_wheel )
+            # pywhispercpp's setup.py uses setuptools-scm/vcs_versioning
+            # which falls back to 0.0.0 when no git history is present
+            # (our extracted tarball has none). Force the version so the
+            # produced wheel filename + METADATA carry the right tag.
+            ( cd "$srcdir" && SETUPTOOLS_SCM_PRETEND_VERSION="${{ steps.ver.outputs.pywhispercpp }}" python setup.py bdist_wheel )
             unrepaired="$(ls "$srcdir"dist/pywhispercpp-*.whl | head -n1)"
             mkdir -p dist
             if [[ "$RUNNER_OS" == "Linux" ]]; then

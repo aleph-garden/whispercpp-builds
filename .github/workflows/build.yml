@@ -118,6 +118,21 @@ jobs:
 
       # macOS Metal needs nothing extra — Xcode CLT is preinstalled on macos-14.
 
+      # Windows: enter an MSVC dev shell + use Ninja generator. MSBuild's
+      # FileTracker hits MAX_PATH (260 chars) on pywhispercpp's deeply
+      # nested try-compile paths and fails with FTK1011. Ninja avoids the
+      # FileTracker layer entirely.
+      - name: Set up MSVC env (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install Ninja (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: choco install ninja -y --no-progress
+
       - name: Install build deps
         shell: bash
         run: |
@@ -143,6 +158,11 @@ jobs:
             export MACOSX_DEPLOYMENT_TARGET=11.0
             export _PYTHON_HOST_PLATFORM=macosx-11.0-arm64
             export ARCHFLAGS="-arch arm64"
+          fi
+          # Windows: force Ninja so the deeply-nested CMake try-compile
+          # paths don't trip MSBuild's FileTracker MAX_PATH limit.
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            export CMAKE_GENERATOR=Ninja
           fi
           mkdir -p dist
           # pip wheel --no-binary forces a from-source build of pywhispercpp,

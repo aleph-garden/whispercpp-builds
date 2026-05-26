@@ -188,8 +188,16 @@ jobs:
           # libwhisper/ggml DLLs afterwards), then run the platform repair
           # tool manually with the right --exclude.
           if [[ "${{ matrix.asset_local_version }}" == "cuda12" ]]; then
-            python -m pip install auditwheel patchelf delvewheel \
-              scikit-build cmake pybind11 setuptools wheel
+            # Install repair tooling per-OS: auditwheel/patchelf are
+            # Linux-only (patchelf has no Windows wheel and the sdist
+            # invokes a unix `.configure` shell script that breaks MSBuild);
+            # delvewheel is Windows-only in practice but harmless elsewhere.
+            python -m pip install scikit-build cmake pybind11 setuptools wheel
+            if [[ "$RUNNER_OS" == "Linux" ]]; then
+              python -m pip install auditwheel patchelf
+            elif [[ "$RUNNER_OS" == "Windows" ]]; then
+              python -m pip install delvewheel
+            fi
             mkdir -p src
             pip download "pywhispercpp==${{ steps.ver.outputs.pywhispercpp }}" \
               --no-deps --no-binary :all: -d src/

@@ -178,20 +178,30 @@ jobs:
           fi
           mkdir -p dist
 
-          # CUDA on Linux + Windows needs a special path: pywhispercpp's
-          # setup.py invokes repairwheel which insists on bundling
-          # libcuda.so.1 / nvcuda.dll — those come from the NVIDIA driver
-          # (not the CUDA toolkit) and are absent on GH runners.
-          # Strategy: extract source, neuter the repair_wheel call, build
-          # with `python setup.py bdist_wheel` (keeps the build/ dir
-          # inside the source tree so we can locate the bundled
-          # libwhisper/ggml DLLs afterwards), then run the platform repair
-          # tool manually with the right --exclude.
-          if [[ "${{ matrix.asset_local_version }}" == "cuda12" ]]; then
-            # Install repair tooling per-OS: auditwheel/patchelf are
-            # Linux-only (patchelf has no Windows wheel and the sdist
-            # invokes a unix `.configure` shell script that breaks MSBuild);
-            # delvewheel is Windows-only in practice but harmless elsewhere.
+          # GPU backends on Linux + Windows need a special path:
+          # pywhispercpp's setup.py invokes repairwheel which bundles the
+          # GPU driver library. Those are system libs that MUST come from
+          # the user's NVIDIA / Mesa Vulkan stack at runtime, not from the
+          # wheel (the bundled libvulkan/libcuda built against the CI's
+          # Vulkan SDK / driver stub is incompatible with arbitrary host
+          # drivers — produces `vk::createInstance: ErrorIncompatibleDriver`
+          # and similar). Strategy: extract source, neuter the
+          # repair_wheel call, build with `python setup.py bdist_wheel`
+          # (keeps build/ dir inside source tree so we can locate the
+          # bundled libwhisper/ggml afterwards), then run the platform
+          # repair tool manually with the right --exclude.
+          # macOS Metal is standard — no driver-loader lib involved.
+          if [[ "$RUNNER_OS" != "macOS" && "${{ matrix.asset_local_version }}" != "" ]]; then
+            case "${{ matrix.asset_local_version }}-$RUNNER_OS" in
+              cuda12-Linux)   exclude_lib="libcuda.so.1" ;;
+              cuda12-Windows) exclude_lib="nvcuda.dll" ;;
+              vulkan-Linux)   exclude_lib="libvulkan.so.1" ;;
+              vulkan-Windows) exclude_lib="vulkan-1.dll" ;;
+            esac
+          else
+            exclude_lib=""
+          fi
+          if [[ -n "$exclude_lib" ]]; then
             python -m pip install scikit-build cmake pybind11 setuptools wheel
             if [[ "$RUNNER_OS" == "Linux" ]]; then
               python -m pip install auditwheel patchelf
@@ -219,16 +229,14 @@ jobs:
             if [[ "$RUNNER_OS" == "Linux" ]]; then
               # manylinux_2_34 matches ubuntu-22.04's glibc 2.35 baseline.
               auditwheel repair \
-                --exclude libcuda.so.1 \
+                --exclude "$exclude_lib" \
                 --plat manylinux_2_34_x86_64 \
                 "$unrepaired" -w dist/
             elif [[ "$RUNNER_OS" == "Windows" ]]; then
-              # MSBuild puts the bundled whisper/ggml DLLs under
-              # build/temp.win-amd64-cpython-312/Release/_pywhispercpp/bin/Release.
               dllsrc_unix="$srcdir/build/temp.win-amd64-cpython-312/Release/_pywhispercpp/bin/Release"
               dllsrc="$(cygpath -w "$dllsrc_unix")"
               python -m delvewheel repair \
-                --exclude nvcuda.dll \
+                --exclude "$exclude_lib" \
                 --add-path "$dllsrc" \
                 "$unrepaired" --wheel-dir dist
             fi

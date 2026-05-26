@@ -92,7 +92,7 @@ jobs:
           echo "pywhispercpp=$v" >> "$GITHUB_OUTPUT"
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
 
@@ -301,7 +301,7 @@ jobs:
           cat "$whl.sha256"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.target }}
           path: |
@@ -319,7 +319,7 @@ jobs:
     if: always() && startsWith(github.ref, 'refs/tags/')
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 

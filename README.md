@@ -26,12 +26,26 @@ changes for the same upstream.
 
 Each release attaches one wheel per row, plus `SHA256SUMS`:
 
-| Asset filename | Platform | GPU backend |
-|---|---|---|
-| `pywhispercpp-<v>+vulkan-cp312-cp312-linux_x86_64.whl` | Linux x86_64 | Vulkan (ROCm/AMD/Mesa) |
-| `pywhispercpp-<v>+cuda12-cp312-cp312-linux_x86_64.whl` | Linux x86_64 | CUDA 12 |
-| `pywhispercpp-<v>+metal-cp312-cp312-macosx_11_0_arm64.whl` | macOS Apple Silicon | Metal |
-| `pywhispercpp-<v>+vulkan-cp312-cp312-win_amd64.whl` | Windows x86_64 | Vulkan |
+| Asset filename | OS | CPU arch | GPU backend | Supported GPUs | Built on (glibc / SDK) |
+|---|---|---|---|---|---|
+| `pywhispercpp-<v>+vulkan-cp312-cp312-linux_x86_64.whl` | Linux | x86_64 | Vulkan 1.3 | Any Vulkan 1.3 GPU — AMD (Mesa/RADV, ROCm), NVIDIA (proprietary), Intel Arc, Apple via MoltenVK | Ubuntu 24.04 / `manylinux_2_39` |
+| `pywhispercpp-<v>+cuda12-cp312-cp312-linux_x86_64.whl` | Linux | x86_64 | CUDA 12.4 | NVIDIA Pascal & newer — GeForce 10/16/20/30/40-series, Quadro RTX, Tesla P100/V100/A100/H100. **Older than Pascal (Maxwell sm_5x and below) not supported.** | Ubuntu 22.04 / `manylinux_2_34` |
+| `pywhispercpp-<v>+metal-cp312-cp312-macosx_11_0_arm64.whl` | macOS 11+ | arm64 (Apple Silicon) | Metal | All Apple Silicon (M1/M2/M3/M4). Intel Macs **not** supported. | macOS 14 (Sonoma) |
+| `pywhispercpp-<v>+vulkan-cp312-cp312-win_amd64.whl` | Windows 10+ | x86_64 | Vulkan 1.3 | Any Vulkan 1.3 GPU with a recent vendor driver — AMD, NVIDIA, Intel Arc | Windows Server 2022 + Vulkan SDK 1.3.290 |
+| `pywhispercpp-<v>+cuda12-cp312-cp312-win_amd64.whl` | Windows 10+ | x86_64 | CUDA 12.4 | NVIDIA Pascal & newer (same arch list as Linux CUDA wheel) | Windows Server 2022 + CUDA 12.4.1 |
+
+> CUDA wheels embed SASS only for the compute capabilities listed below
+> (set via `-DCMAKE_CUDA_ARCHITECTURES`), plus a PTX fallback on `sm_90`
+> so future archs can JIT. This keeps the wheel ~half the size of a
+> default ggml CUDA build.
+>
+> | GeForce series | Arch (codename) | Compute capability |
+> |---|---|---|
+> | GTX 10-series, Titan X/Xp | Pascal | `sm_61` |
+> | GTX 16-series, RTX 20-series, Titan RTX | Turing | `sm_75` |
+> | RTX 30-series, A100 | Ampere | `sm_80`, `sm_86` |
+> | RTX 40-series | Ada Lovelace | `sm_89` |
+> | H100, H200 | Hopper | `sm_90` (+ PTX) |
 
 ## Local-version segment trick
 

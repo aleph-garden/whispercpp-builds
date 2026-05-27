@@ -57,7 +57,12 @@ jobs:
             # 22.04 = glibc 2.35 → manylinux_2_34 (next-lowest supported).
             runner: ubuntu-22.04
             python: '3.12'
-            cmake_args: '-DGGML_CUDA=on'
+            # CUDA arch list = consumer GeForce 10-series (Pascal sm_61) onward:
+            # Pascal/10xx (61), Turing/16-20xx (75), Ampere/30xx + A100 (80/86),
+            # Ada/40xx (89), Hopper (90). `-real` emits only SASS (no PTX), `-virtual`
+            # on 90 keeps a PTX fallback for future archs. Default ggml list is much
+            # wider (50-90) — narrowing it ~halves the build time and wheel size.
+            cmake_args: '-DGGML_CUDA=on -DCMAKE_CUDA_ARCHITECTURES=61-real;75-real;80-real;86-real;89-real;90-real;90-virtual'
             cuda_version: '12.4.1'
             asset_local_version: cuda12
             asset_platform: linux_x86_64
@@ -77,7 +82,8 @@ jobs:
           - target: windows-x86_64-cuda12
             runner: windows-latest
             python: '3.12'
-            cmake_args: '-DGGML_CUDA=on'
+            # See linux-x86_64-cuda12 comment for arch list rationale.
+            cmake_args: '-DGGML_CUDA=on -DCMAKE_CUDA_ARCHITECTURES=61-real;75-real;80-real;86-real;89-real;90-real;90-virtual'
             cuda_version: '12.4.1'
             asset_local_version: cuda12
             asset_platform: win_amd64

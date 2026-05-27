@@ -206,7 +206,13 @@ jobs:
             exclude_lib=""
           fi
           if [[ -n "$exclude_lib" ]]; then
-            python -m pip install scikit-build cmake pybind11 setuptools wheel
+            # setuptools-scm is in pywhispercpp's [build-system] requires but
+            # `python setup.py bdist_wheel` (below) runs without PEP 517 build
+            # isolation, so it isn't auto-installed. pywhispercpp's setup() omits
+            # version= and relies entirely on the setuptools-scm plugin to inject
+            # it; without the plugin setuptools defaults to 0.0.0 (and
+            # SETUPTOOLS_SCM_PRETEND_VERSION has nothing to honor it). Install it.
+            python -m pip install scikit-build cmake pybind11 setuptools "setuptools-scm>=8" wheel
             if [[ "$RUNNER_OS" == "Linux" ]]; then
               python -m pip install auditwheel patchelf
             elif [[ "$RUNNER_OS" == "Windows" ]]; then
@@ -227,10 +233,9 @@ jobs:
           assert new != code, "could not locate repair_wheel call in setup.py"
           p.write_text(new, encoding="utf-8")
           PY
-            # pywhispercpp's setup.py uses setuptools-scm/vcs_versioning
-            # which falls back to 0.0.0 when no git history is present
-            # (our extracted tarball has none). Force the version so the
-            # produced wheel filename + METADATA carry the right tag.
+            # With setuptools-scm installed it reads the version back from the
+            # sdist's PKG-INFO; PRETEND_VERSION pins it belt-and-suspenders so a
+            # stray parent git checkout can't sway the result.
             ( cd "$srcdir" && SETUPTOOLS_SCM_PRETEND_VERSION="${{ steps.ver.outputs.pywhispercpp }}" python setup.py bdist_wheel )
             unrepaired="$(ls "$srcdir"dist/pywhispercpp-*.whl | head -n1)"
             mkdir -p dist
@@ -280,6 +285,12 @@ jobs:
           import pathlib, re
           p = pathlib.Path("$metadata")
           s = p.read_text(encoding="utf-8")
+          m = re.search(r'^Version:\s*([^\s+]+)', s, flags=re.MULTILINE)
+          assert m, "Version: line not found"
+          base, want = m.group(1), "${{ steps.ver.outputs.pywhispercpp }}"
+          # Guard against shipping a mislabeled wheel (e.g. 0.0.0 when the build
+          # env is missing setuptools-scm) — fail loud rather than publish it.
+          assert base == want, f"built wheel version {base!r} != expected {want!r}"
           new = re.sub(
             r'^(Version:\s*)([^\s+]+)(\+[^\s]+)?\s*$',
             r'\g<1>\g<2>+${{ matrix.asset_local_version }}',
